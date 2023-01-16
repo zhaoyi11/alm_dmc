@@ -9,14 +9,14 @@
 #SBATCH --array=0-7
 
 case $SLURM_ARRAY_TASK_ID in
-    0) ENV="acrobot_swingup";;
-    1) ENV="cheetah_run" ;;
-    2) ENV="fish_swim";;
-    3) ENV="dog_run" ;;
-    4) ENV="quadruped_walk" ;;
-    5) ENV="walker_walk" ;;
-    6) ENV="humanoid_walk" ;;
-    7) ENV="dog_walk" ;;
+    0) ENV="acrobot-swingup";;
+    1) ENV="cheetah-run" ;;
+    2) ENV="fish-swim";;
+    3) ENV="dog-run" ;;
+    4) ENV="quadruped-walk" ;;
+    5) ENV="walker-walk" ;;
+    6) ENV="humanoid-walk" ;;
+    7) ENV="dog-walk" ;;
 esac
 
 source /home/zhaoy13/.bashrc
