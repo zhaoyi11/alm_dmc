@@ -116,7 +116,7 @@ class MujocoWorkspace:
             returns += ep_rew
             steps += ep_len
             
-            print("Episode: {}, total numsteps: {}, return: {}".format(self._train_episode, self._global_step, round(ep_rew, 2)))
+        print("Episode: {}, total numsteps: {}, return: {}".format(self._train_episode, self._global_step, round(returns/self.cfg.num_eval_episodes, 2)))
 
         eval_metrics = dict()
         eval_metrics['episode'] = self._train_episode

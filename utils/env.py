@@ -1,11 +1,15 @@
-# import gym
-# from gym.envs.mujoco import mujoco_env
-# from gym import utils
 import matplotlib.pyplot as plt
 from matplotlib import animation
-import numpy as np 
+from collections import deque, defaultdict
+from typing import Any, NamedTuple
+import dm_env
+import numpy as np
+from dm_control import suite
+from dm_env import StepType, specs
+import gym
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning) 
+
 
 def linear_schedule(start_sigma: float, end_sigma: float, duration: int, t: int):
     return end_sigma + (1 - min(t / duration, 1)) * (start_sigma - end_sigma)
@@ -25,16 +29,7 @@ def save_frames_as_gif(frames, path='./', filename='gym_animation.gif'):
     anim = animation.FuncAnimation(plt.gcf(), animate, frames = len(frames), interval=50)
     anim.save(path + filename, writer='imagemagick', fps=60)
 
-from collections import deque, defaultdict
-from typing import Any, NamedTuple
-import dm_env
-import numpy as np
-from dm_control import suite
-from dm_control.suite.wrappers import action_scale
-from dm_env import StepType, specs
-import gym
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning) 
+
 
 
 class ExtendedTimeStep(NamedTuple):

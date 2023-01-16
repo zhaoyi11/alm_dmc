@@ -1,8 +1,8 @@
 #!/bin/bash
-#SBATCH --job-name=latent_model
+#SBATCH --job-name=alm
 #SBATCH --account=project_2003582
-#SBATCH --output=latent_model_out_%A_%a.txt
-#SBATCH --error=latent_model_err_%A_%a.txt
+#SBATCH --output=alm_out_%A_%a.txt
+#SBATCH --error=alm_err_%A_%a.txt
 #SBATCH --time=72:00:00
 #SBATCH --mem=60G
 #SBATCH --partition=gpu
