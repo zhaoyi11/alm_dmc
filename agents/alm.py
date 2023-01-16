@@ -115,7 +115,7 @@ class AlmAgent(object):
             utils.soft_update(self.critic_target, self.critic, self.tau)
 
         if log: 
-            wandb.log(metrics, step=step)  
+            wandb.log({'train/':metrics}, step=step)  
 
     def update_representation(self, std, step, log, metrics):    
         state_seq, action_seq, reward_seq, next_state_seq, done_seq = self.env_buffer.sample_seq(self.seq_len, self.batch_size)

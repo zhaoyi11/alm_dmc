@@ -5,8 +5,9 @@ import wandb
 import numpy as np
 
 from pathlib import Path 
-from utils.env import save_frames_as_gif
-from workspaces.common import make_agent, make_env
+from utils.env import save_frames_as_gif, make_env
+from workspaces.common import make_agent
+from utils.logger import Logger
 
 class MujocoWorkspace:
     def __init__(self, cfg):
@@ -17,11 +18,13 @@ class MujocoWorkspace:
             self.checkpoint_path.mkdir(exist_ok=True)
         self.device = torch.device(cfg.device)
         self.set_seed()
-        self.train_env, self.eval_env = make_env(self.cfg)
+        self.train_env, self.eval_env = make_env(cfg.id, cfg.seed, cfg.action_repeat), make_env(cfg.id, cfg.seed, cfg.action_repeat)
         self.agent = make_agent(self.train_env, self.device, self.cfg)
-        self._train_step = 0
+        self._global_step = 0
         self._train_episode = 0
         self._best_eval_returns = -np.inf
+        self.initial_time = time.time()
+
 
     def set_seed(self):
         random.seed(self.cfg.seed)
@@ -47,34 +50,49 @@ class MujocoWorkspace:
         self._eval()
 
         state, done, episode_start_time = self.train_env.reset(), False, time.time()
-        
-        for _ in range(1, self.cfg.num_train_steps-self.cfg.explore_steps+1):  
+        self.initial_time = episode_start_time
+        ep_rew, ep_len = 0, 0
+        for stp in range(1, self.cfg.num_train_steps-self.cfg.explore_steps+1):  
 
-            action = self.agent.get_action(state, self._train_step)
+            action = self.agent.get_action(state, self._global_step)
             next_state, reward, done, info = self.train_env.step(action)
-            self._train_step += 1
+            self._global_step += 1
+            ep_rew += reward
+            ep_len += 1
 
-            self.agent.env_buffer.push((state, action, reward, next_state, False if info.get("TimeLimit.truncated", False) else done))
+            self.agent.env_buffer.push((state, action, reward, next_state, done))
 
-            self.agent.update(self._train_step)
+            if self._global_step % self.cfg.update_every_steps == 0:
+                self.agent.update(self._global_step)
 
-            if (self._train_step)%self.cfg.eval_episode_interval==0:
-                self._eval()
 
-            if self.cfg.save_snapshot and (self._train_step)%self.cfg.save_snapshot_interval==0:
+
+            if self.cfg.save_snapshot and (self._global_step)%self.cfg.save_snapshot_interval==0:
                 self.save_snapshot()
 
             if done:
                 self._train_episode += 1
-                print("Episode: {}, total numsteps: {}, return: {}".format(self._train_episode, self._train_step, round(info["episode"]["r"], 2)))
+                # print("Episode: {}, total numsteps: {}, return: {}".format(self._train_episode, self._global_step, round(ep_rew, 2)))
                 if self.cfg.wandb_log:
                     episode_metrics = dict()
-                    episode_metrics['episodic_length'] = info["episode"]["l"]
-                    episode_metrics['episodic_return'] = info["episode"]["r"]
-                    episode_metrics['steps_per_second'] = info["episode"]["l"]/(time.time() - episode_start_time)
+                    episode_metrics['episode_length'] =  ep_len
+                    episode_metrics['episode_reward'] = ep_rew
+                    episode_metrics['fps'] = (ep_len * self.cfg.action_repeat) / (time.time() - episode_start_time)
                     episode_metrics['env_buffer_length'] = len(self.agent.env_buffer)
-                    wandb.log(episode_metrics, step=self._train_step)
+                    episode_metrics['episode'] = self._train_episode
+                    episode_metrics['step'] = self._global_step
+                    episode_metrics['env_step'] = self._global_step * self.cfg.action_repeat
+                    episode_metrics['total_time'] = time.time() - self.initial_time
+
+                    wandb.log({'train/':episode_metrics}, step=self._global_step)
                 state, done, episode_start_time = self.train_env.reset(), False, time.time()
+
+                # reset ep_len, ep_rew
+                ep_rew, ep_len = 0, 0
+
+                # eval 
+                if (self._train_episode)%self.cfg.eval_episode_interval==0:
+                    self._eval()
             else:
                 state = next_state
 
@@ -86,39 +104,33 @@ class MujocoWorkspace:
         for _ in range(self.cfg.num_eval_episodes):
             done = False 
             state = self.eval_env.reset()
+            ep_rew, ep_len = 0, 0
             while not done:
-                action = self.agent.get_action(state, self._train_step, True)
-                next_state, _, done ,info = self.eval_env.step(action)
+                action = self.agent.get_action(state, self._global_step, True)
+                next_state, rew, done ,info = self.eval_env.step(action)
                 state = next_state
                 
-            returns += info["episode"]["r"]
-            steps += info["episode"]["l"]
+                ep_len += 1
+                ep_rew += rew
+                
+            returns += ep_rew
+            steps += ep_len
             
-            print("Episode: {}, total numsteps: {}, return: {}".format(self._train_episode, self._train_step, round(info["episode"]["r"], 2)))
+            print("Episode: {}, total numsteps: {}, return: {}".format(self._train_episode, self._global_step, round(ep_rew, 2)))
 
         eval_metrics = dict()
-        eval_metrics['eval_episodic_return'] = returns/self.cfg.num_eval_episodes
-        eval_metrics['eval_episodic_length'] = steps/self.cfg.num_eval_episodes
+        eval_metrics['episode'] = self._train_episode
+        eval_metrics['step'] = self._global_step
+        eval_metrics['env_step'] = self._global_step * self.cfg.action_repeat
+        eval_metrics['time'] = time.time() - self.initial_time
+        eval_metrics['episode_reward'] = returns/self.cfg.num_eval_episodes
 
         if self.cfg.save_snapshot and returns/self.cfg.num_eval_episodes >= self._best_eval_returns:
             self.save_snapshot(best=True)
             self._best_eval_returns = returns/self.cfg.num_eval_episodes
 
         if self.cfg.wandb_log:
-            wandb.log(eval_metrics, step = self._train_step)
-
-    def _render_episodes(self, record):
-        frames = []
-        done = False 
-        state = self.eval_env.reset()
-        while not done:
-            action = self.agent.get_action(state, self._train_step, True)
-            next_state, _, done, info = self.eval_env.step(action)
-            self.eval_env.render()
-            state = next_state
-        if record:
-            save_frames_as_gif(frames)
-        print("Episode: {}, episode steps: {}, episode returns: {}".format(i, info["episode"]["l"], round(info["episode"]["r"], 2)))
+            wandb.log({'eval/': eval_metrics}, step = self._global_step)
         
     def _eval_bias(self):
         final_mc_list, final_obs_list, final_act_list = self._mc_returns()
@@ -138,7 +150,7 @@ class MujocoWorkspace:
             metrics['std_bias'] = np.std(bias)
             metrics['mean_normalised_bias'] = np.mean(normalized_bias_per_state)
             metrics['std_normalised_bias'] = np.std(normalized_bias_per_state)
-            wandb.log(metrics, step = self._train_step)
+            wandb.log(metrics, step = self._global_step)
 
     def _mc_returns(self):
         final_mc_list = np.zeros(0)
@@ -153,7 +165,7 @@ class MujocoWorkspace:
             r, d, ep_ret, ep_len = 0, False, 0, 0
 
             while not d:
-                a = self.agent.get_action(o, self._train_step, True)
+                a = self.agent.get_action(o, self._global_step, True)
                 obs_list.append(o)
                 act_list.append(a)
                 o, r, d, _ = self.eval_env.step(a)
@@ -178,6 +190,6 @@ class MujocoWorkspace:
         if best:
             snapshot = Path(self.checkpoint_path) / 'best.pt'
         else:
-            snapshot = Path(self.checkpoint_path) / Path(str(self._train_step)+'.pt')
+            snapshot = Path(self.checkpoint_path) / Path(str(self._global_step)+'.pt')
         save_dict = self.agent.get_save_dict()
         torch.save(save_dict, snapshot)
