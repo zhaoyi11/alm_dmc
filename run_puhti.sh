@@ -26,9 +26,6 @@ export PROJID=project_2003582
 export PROJAPPL=/projappl/${PROJID}
 export SCRATCH=/scratch/${PROJID}
 
-module load paraview/5.8.1-pvserverosmesa2 # for osmesa rendering
-
-export MUJOCO_GL="osmesa"
 export LC_ALL=en_US.UTF-8
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK # set the number of threads based on --cpus-per-task
 
