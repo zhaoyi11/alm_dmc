@@ -50,7 +50,7 @@ class MujocoWorkspace:
         self._eval()
 
         state, done, episode_start_time = self.train_env.reset(), False, time.time()
-        self.initial_time = episode_start_time
+        self.initial_time = time.time()
         ep_rew, ep_len = 0, 0
         for stp in range(1, self.cfg.num_train_steps-self.cfg.explore_steps+1):  
 
